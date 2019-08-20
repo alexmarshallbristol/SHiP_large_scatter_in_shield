@@ -1,0 +1,209 @@
+ 
+
+print('muon shield is design:',ship_geo.muShieldDesign)
+run.AddModule(TargetStation)
+MuonShield = ROOT.ShipMuonShield("MuonShield",ship_geo.muShieldDesign,"ShipMuonShield",ship_geo.muShield.z,ship_geo.muShield.dZ0,ship_geo.muShield.dZ1,\
+               ship_geo.muShield.dZ2,ship_geo.muShield.dZ3,ship_geo.muShield.dZ4,ship_geo.muShield.dZ5,ship_geo.muShield.dZ6,\
+               ship_geo.muShield.dZ7,ship_geo.muShield.dZ8,ship_geo.muShield.dXgap,ship_geo.muShield.LE,ship_geo.Yheight*4./10.,0.) 
+MuonShield.SetSupports(False) # otherwise overlap with sensitive Plane 
+run.AddModule(MuonShield) # needs to be added because of magn hadron shield.
+
+
+sensPlane = ROOT.exitHadronAbsorber()
+# sensPlane.SetZposition(-5674*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+# sensPlane.SetZposition(0*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+sensPlane.SetZposition(z_sens_plane_position*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+# 
+# help(sensPlane)
+run.AddModule(sensPlane)
+
+# sensPlane = ROOT.exitHadronAbsorber()
+# # sensPlane.SetEnergyCut(ecut*u.GeV) 
+# # if storeOnlyMuons: sensPlane.SetOnlyMuons()
+# # if skipNeutrinos: sensPlane.SkipNeutrinos()
+# # if FourDP: sensPlane.SetOpt4DP() # in case a ntuple should be filled with pi0,etas,omega
+# sensPlane.SetZposition(-5000*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+# run.AddModule(sensPlane)
+
+# ship_geo.muShield.Field = 0.
+
+
+# sensPlane = ROOT.exitHadronAbsorber()
+# # sensPlane.SetZposition(-5674*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+# sensPlane.SetZposition(-6274*u.cm) # if not using automatic positioning behind default magnetized hadron absorber
+
+# # help(sensPlane)
+# run.AddModule(sensPlane)
+
+
+# -----Create PrimaryGenerator--------------------------------------
+simEngine = "MuonBack"
+
+if simEngine == "fixedTarget": 
+  primGen = ROOT.FairPrimaryGenerator()
+  P8gen = ROOT.FixedTargetGenerator()
+  P8gen.SetTarget("/TargetArea_1",0.,0.) # will distribute PV inside target, beam offset x=y=0.
+  P8gen.SetMom(400.*u.GeV)
+  P8gen.SetEnergyCut(ecut*u.GeV)
+  P8gen.SetDebug(Debug)
+  P8gen.SetHeartBeat(100000)
+  if G4only: P8gen.SetG4only()
+  if JpsiMainly: P8gen.SetJpsiMainly()
+  if tauOnly:    P8gen.SetTauOnly()
+  if withEvtGen: P8gen.WithEvtGen()
+  if boostDiMuon > 1:
+   P8gen.SetBoost(boostDiMuon) # will increase BR for rare eta,omega,rho ... mesons decaying to 2 muons in Pythia8
+                              # and later copied to Geant4
+  P8gen.SetSeed(args.seed)
+  # for charm/beauty
+  #        print ' for experts: p pot= number of protons on target per spill to normalize on'
+  #        print '            : c chicc= ccbar over mbias cross section'
+  if charm or beauty:
+   print "--- process heavy flavours ---"
+   P8gen.InitForCharmOrBeauty(charmInputFile,nev,npot,nStart)
+  primGen.AddGenerator(P8gen)
+  #
+
+
+
+if simEngine == "PG": 
+  primGen = ROOT.FairPrimaryGenerator()
+  myPgun = ROOT.FairBoxGenerator(13,1)
+  myPgun.SetPRange(400,400)
+  myPgun.SetPhiRange(0, 0) # // Azimuth angle range [degree]
+  myPgun.SetXYZ(0.*u.cm, 0.*u.cm, -8000.*u.cm) 
+  myPgun.SetThetaRange(0,0) # // Polar angle in lab system range [degree]
+  primGen.AddGenerator(myPgun)
+
+if simEngine == "MuonBack":
+  # primGen = ROOT.FairPrimaryGenerator()
+  # inputFile = "/afs/cern.ch/user/a/amarshal/GEANT_fairship_geo/muons.root"
+  
+  # MuonBackgen = ROOT.MuonBackGenerator()
+  # MuonBackgen.Init(inputFile,0,True)
+  # primGen.AddGenerator(MuonBackgen)
+  primGen = ROOT.FairPrimaryGenerator()
+  primGen.SetTarget(ship_geo.target.z0+70.1225*u.m,0.)
+  P8gen = ROOT.FixedTargetGenerator()
+  primGen.AddGenerator(P8gen)
+
+run.SetGenerator(primGen)
+# -----Initialize simulation run------------------------------------
+run.Init()
+
+gMC = ROOT.TVirtualMC.GetMC()
+fStack = gMC.GetStack()
+fStack.SetMinPoints(1)
+fStack.SetEnergyCut(-1.)
+
+
+
+
+#
+# import AddDiMuonDecayChannelsToG4
+# AddDiMuonDecayChannelsToG4.Initialize(P8gen.GetPythia())
+
+# boost gamma2muon conversion
+# if boostFactor > 1:
+#  ROOT.gROOT.ProcessLine('#include "Geant4/G4ProcessTable.hh"')
+#  ROOT.gROOT.ProcessLine('#include "Geant4/G4AnnihiToMuPair.hh"')
+#  ROOT.gROOT.ProcessLine('#include "Geant4/G4GammaConversionToMuons.hh"')
+#  gProcessTable = ROOT.G4ProcessTable.GetProcessTable()
+#  procAnnihil = gProcessTable.FindProcess(ROOT.G4String('AnnihiToMuPair'),ROOT.G4String('e+'))
+#  procGMuPair = gProcessTable.FindProcess(ROOT.G4String('GammaToMuPair'),ROOT.G4String('gamma'))
+#  procGMuPair.SetCrossSecFactor(boostFactor)
+#  procAnnihil.SetCrossSecFactor(boostFactor)
+
+# -----Start run----------------------------------------------------
+run.Run(nev)
+
+# -----Finish-------------------------------------------------------
+timer.Stop()
+rtime = timer.RealTime()
+ctime = timer.CpuTime()
+print ' ' 
+print "Macro finished succesfully." 
+print "Output file is ",  outFile 
+print "Real time ",rtime, " s, CPU time ",ctime,"s"
+# ---post processing--- remove empty events --- save histograms
+# tmpFile = outFile+"tmp"
+# if ROOT.gROOT.GetListOfFiles().GetEntries()>0:
+#  fin   = ROOT.gROOT.GetListOfFiles()[0]
+# else:
+#  fin = ROOT.TFile.Open(outFile)
+# fHeader = fin.FileHeader
+# fHeader.SetRunId(runnr)
+# if charm or beauty:
+# # normalization for charm
+#  poteq = P8gen.GetPotForCharm()
+#  info = "POT equivalent = %7.3G"%(poteq)
+# else: 
+#  info = "POT = "+str(nev)
+
+# conditions = " with ecut="+str(ecut)
+# if JpsiMainly: conditions+=" J"
+# if tauOnly:    conditions+=" T"
+# if withEvtGen: conditions+=" V"
+# if boostDiMuon > 1: conditions+=" diMu"+str(boostDiMuon)
+# if boostFactor > 1: conditions+=" X"+str(boostFactor)
+
+# info += conditions
+# fHeader.SetTitle(info)
+# print "Data generated ", fHeader.GetTitle()
+
+# nt = fin.Get('4DP')
+# if nt:
+#  tf = ROOT.TFile('FourDP.root','recreate')
+#  tnt = nt.CloneTree(0)
+#  for i in range(nt.GetEntries()):
+#   rc = nt.GetEvent(i)
+#   rc = tnt.Fill(nt.id,nt.px,nt.py,nt.pz,nt.x,nt.y,nt.z)
+#  tnt.Write()
+#  tf.Close()
+
+# t     = fin.cbmsim
+# fout  = ROOT.TFile(tmpFile,'recreate' )
+# sTree = t.CloneTree(0)
+# nEvents = 0
+# for n in range(t.GetEntries()):
+#      rc = t.GetEvent(n)
+#      if t.vetoPoint.GetEntries()>=0: 
+#           rc = sTree.Fill()
+#           nEvents+=1
+#      #t.Clear()
+# fout.cd()
+# for k in fin.GetListOfKeys():
+#  x = fin.Get(k.GetName())
+#  className = x.Class().GetName()
+#  if className.find('TTree')<0 and className.find('TNtuple')<0: 
+#    xcopy = x.Clone()
+#    rc = xcopy.Write()
+# sTree.AutoSave()
+# ff   = fin.FileHeader.Clone(fout.GetName())
+# fout.cd()
+# ff.Write("FileHeader", ROOT.TObject.kSingleKey)
+# sTree.Write()
+# fout.Close()
+
+# rc1 = os.system("rm  "+outFile)
+# rc2 = os.system("mv "+tmpFile+" "+outFile)
+# print "removed out file, moved tmpFile to out file",rc1,rc2
+# fin.SetWritable(False) # bpyass flush error
+
+# print "Number of events produced with activity after hadron absorber:",nEvents
+
+import checkMagFields
+def visualizeMagFields():
+  checkMagFields.run(-5894)
+# visualizeMagFields()
+
+
+
+if checkOverlap:
+ sGeo = ROOT.gGeoManager
+ sGeo.CheckOverlaps()
+ sGeo.PrintOverlaps()
+ run.CreateGeometryFile("%s/geofile_full.root" % (outputDir))
+ run.CreateGeometryFile("/afs/cern.ch/user/a/amarshal/GEANT_fairship_geo/muonShieldGeom_sensplane.root")
+ import saveBasicParameters
+ saveBasicParameters.execute("%s/geofile_full.root" % (outputDir),ship_geo)

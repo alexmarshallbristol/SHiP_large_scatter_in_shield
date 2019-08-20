@@ -1,0 +1,102 @@
+#include <math.h>
+#include <array>
+#include "TROOT.h"
+#include "FairPrimaryGenerator.h"
+#include "FairMCEventHeader.h"
+#include "TGeoNode.h"
+#include "TGeoVolume.h"
+#include <TGeoManager.h>
+#include "TGeoBBox.h"
+#include "TMath.h"
+#include "FixedTargetGenerator.h"
+#include "HNLPythia8Generator.h"
+#include "Pythia8Plugins/EvtGen.h"
+#include "EvtGenBase/EvtSimpleRandomEngine.hh"
+#include "EvtGenBase/EvtRandom.hh"
+#include "TMCProcess.h"
+#include "TDatabasePDG.h"               // for TDatabasePDG
+const Double_t cm = 10.; // pythia units are mm
+const Double_t c_light = 2.99792458e+10; // speed of light in cm/sec (c_light   = 2.99792458e+8 * m/s)
+const Double_t mbarn = 1E-3*1E-24*TMath::Na(); // cm^2 * Avogadro
+
+using namespace Pythia8;
+
+// -----   Default constructor   -------------------------------------------
+FixedTargetGenerator::FixedTargetGenerator() 
+{
+  fUseRandom1 = kFALSE; 
+  fUseRandom3 = kTRUE;
+  fSeed = 0;
+  fMom        = 400;  // proton
+  fLogger = FairLogger::GetLogger();
+  targetName = ""; 
+  fcharmtarget = false;
+  xOff=0; yOff=0;
+  tauOnly = false;
+  JpsiMainly = false;
+  G4only = false;
+  maxCrossSection = 0.;
+  EMax = 0;
+  fBoost = 1.;
+  withEvtGen = kFALSE;
+  chicc=1.7e-3;     //prob to produce primary ccbar pair/pot
+  chibb=1.6e-7;     //prob to produce primary bbbar pair/pot
+  nrpotspill = 5.E13; // nr of protons / spill
+  setByHand = kFALSE;
+  Debug = kFALSE;
+  Option = "Primary";
+  wspill = 1.; // event weight == 1 for primary events
+  heartbeat = 1000;
+}
+Bool_t FixedTargetGenerator::InitForCharmOrBeauty(TString fInName, Int_t nev, Double_t npot, Int_t nStart)
+{
+  Option = "charm";
+  nEntry = nStart;
+  // open input file with charm or beauty
+  fin   = TFile::Open(fInName);
+  nTree = (TNtuple*)fin->FindObjectAny("pythia6"); // old format, simple ntuple
+  nEvents = nTree->GetEntries();
+  nTree->SetBranchAddress("id",&n_id);
+  nTree->SetBranchAddress("px",&n_px);
+  nTree->SetBranchAddress("py",&n_py);
+  nTree->SetBranchAddress("pz",&n_pz);
+  nTree->SetBranchAddress("M",&n_M);
+  nTree->SetBranchAddress("E",&n_E);
+  nTree->SetBranchAddress("mid",&n_mid);
+  nTree->SetBranchAddress("mpx",&n_mpx);
+  nTree->SetBranchAddress("mpy",&n_mpy);
+  nTree->SetBranchAddress("mpz",&n_mpz);
+  nTree->SetBranchAddress("mE",&n_mE);
+  if (nTree->GetBranch("k")){
+   fLogger->Info(MESSAGE_ORIGIN,"+++has branch+++");
+   nTree->SetBranchAddress("k",&ck);}
+// check if we deal with charm or beauty:
+  nTree->GetEvent(0);
+  if (!setByHand and n_M>5){ 
+    chicc = chibb;
+    fLogger->Info(MESSAGE_ORIGIN,"automatic detection of beauty, configured for beauty");
+    fLogger->Info(MESSAGE_ORIGIN,"bb cross section / mbias %f",chicc);
+  }else{
+    fLogger->Info(MESSAGE_ORIGIN,"cc cross section / mbias %f",chicc);
+  }
+// convert pot to weight corresponding to one spill of 5e13 pot
+ // get histogram with number of pot to normalise
+ // pot are counted double, i.e. for each signal, i.e. pot/2.
+  Int_t nrcpot=((TH1F*)fin->Get("2"))->GetBinContent(1)/2.; // number of primary interactions
+  wspill = nrpotspill*chicc/nrcpot*nEvents/nev;
+  fLogger->Info(MESSAGE_ORIGIN,"Input file: %s   with %i entries, corresponding to nr-pot=%f",fInName.Data(),nEvents,nrcpot/chicc);
+  fLogger->Info(MESSAGE_ORIGIN,"weight %f corresponding to %f p.o.t. per spill for %f events to process",wspill,nrpotspill,nev);
+
+  pot=0.;
+  //Determine fDs on this file for primaries
+  nDsprim=0;
+  ntotprim=0;
+
+  return kTRUE;
+}
+// -----   Default Init   -------------------------------------------
+Bool_t FixedTargetGenerator::Init() 
+{
+
+  // cout << "/afs/cern.ch/user/a/amarshal/GEANT_fairship_geo/muons.root" << endl;
+  char* fileName = "
